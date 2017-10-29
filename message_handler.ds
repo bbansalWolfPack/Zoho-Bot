@@ -1,0 +1,248 @@
+// author: Bhavya Bansal
+// email: bbansal@ncsu.edu
+
+response = Map();
+headersAPIAI = Map();
+headersAPIAI.put("Content-Type","application/json");
+headersAPIAI.put("Authorization","Bearer 47af88577eb94c83a92c6c960623b118");
+reqbody = Map();
+reqbody.put("lang","en");
+reqbody.put("query",message);
+reqbody.put("sessionId","12345");
+reqbody.put("timezone","America/New_York");
+keyMap = Map();
+responseAPIAI = invokeurl
+[
+	url :"https://api.dialogflow.com/v1/query?v=20150910"
+	type :POST
+	parameters:reqbody.toString()
+	headers:headersAPIAI
+];
+responsemap = responseAPIAI.toMap();
+actionName = "" + responsemap.get("result").get("action");
+if(actionName.equalsIgnoreCase("user.initiation"))
+{
+	response.put("text","Hello, " + user.get("first_name") + " " + user.get("last_name") + ". Please type help to see what I can do for you");
+}
+else if(actionName.equalsIgnoreCase("conversation.end"))
+{
+	response.put("text","GoodBye, " + user.get("first_name") + " " + user.get("last_name"));
+}
+else if(actionName.equalsIgnoreCase("bot.help"))
+{
+	helpMenu = "Here is what my autobots can do for you: \n 1. `create vm` : creates virtual machine on Digital Ocean.\n 2. `manage reservations` : shows all your current reservations and further options to edit/delete the specific reservation\n 3. `save digital ocean keys` : save your digital ocean keys\n 4. `show available configurations` : see what all digital ocean provides you...\n 5. `exit` : exit the conversation\n ";
+	response.put("text",helpMenu);
+}
+else if(actionName.equalsIgnoreCase("create.vm"))
+{
+	headersTemp = Map();
+	headersTemp.put("Content-Type","application/json");
+	fireBaseResponse = invokeurl
+	[
+		url :"https://hackduke-d56a4.firebaseio.com/rest/saving-data/fireblog/" + user.get("first_name") + "/Keys.json"
+		type :GET
+		headers:headersTemp
+	];
+	digitalOceanToken = fireBaseResponse.toMap().get("Token");
+	sshKeyId = fireBaseResponse.toMap().get("sshKeyId").toLong();
+	digitalOceanHeader = Map();
+	digitalOceanHeader.put("Content-Type","application/json");
+	digitalOceanHeader.put("Authorization","Bearer " + digitalOceanToken);
+	requestBody = Map();
+	requestBody.put("name","DevOps-Node");
+	requestBody.put("region","nyc3");
+	requestBody.put("size","512mb");
+	requestBody.put("image","ubuntu-16-04-x64");
+	requestBody.put("ssh_keys",{sshKeyId});
+	requestBody.put("backups",false);
+	requestBody.put("ipv6",false);
+	requestBody.put("user_data",null);
+	requestBody.put("private_networking",null);
+	dropletId = "";
+	digitalOceanResponse = invokeurl
+	[
+		url :"https://api.digitalocean.com/v2/droplets"
+		type :POST
+		parameters:requestBody.toString()
+		headers:digitalOceanHeader
+	];
+	if(digitalOceanResponse.toMap().size() > 0)
+	{
+		dropletId = digitalOceanResponse.toMap().get("droplet").get("id");
+		// new api invocation to get public IP address
+		digitalOceanResponseForIP = invokeurl
+		[
+			url :"https://api.digitalocean.com/v2/droplets/" + dropletId
+			type :GET
+			headers:digitalOceanHeader
+		];
+		dropletIP = "";
+			dropletIP = digitalOceanResponseForIP.toMap().get("droplet").get("networks").get("v4").get(0).get("ip_address");
+			response.put("text","Droplet IP: " + dropletIP);
+	}
+	else
+	{
+		response.put("text","Connection is slow");
+	}
+            // save data in firebase
+            headersNew = Map();
+			headersNew.put("Content-Type","application/json");
+			reqbody = Map();
+			reqbody.put("email",user.get("email"));
+			reqbody.put("dropletId",dropletId);
+			newFirebaseResponse = invokeurl
+			[
+				url :"https://hackduke-d56a4.firebaseio.com/rest/saving-data/fireblog/" + user.get("first_name") + "/Reservations/" + dropletId + "Details.json"
+				type :PUT
+				parameters:reqbody.toString()
+				headers:headersNew
+			];
+}
+else if(actionName.equalsIgnoreCase("save.digital.ocean.keys"))
+{
+	headersTemp = Map();
+	headersTemp.put("Content-Type","application/json");
+	fireBaseResponse = invokeurl
+	[
+		url :"https://hackduke-d56a4.firebaseio.com/rest/saving-data/fireblog/" + user.get("first_name") + "/Keys.json"
+		type :GET
+		headers:headersTemp
+	];
+	if(fireBaseResponse == null)
+	{
+		// save keys was not called earlies
+		response.put("text","Please provide your digital ocean token. Example: my token is <Digital Ocean Token>");
+	}
+	else
+	{
+		headersNew = Map();
+		headersNew.put("Content-Type","application/json");
+		reqbody = Map();
+		reqbody.put("email",user.get("email"));
+		reqbody.put("Token",null);
+		reqbody.put("sshKeyId",null);
+		newFirebaseResponse = invokeurl
+		[
+			url :"https://hackduke-d56a4.firebaseio.com/rest/saving-data/fireblog/" + user.get("first_name") + "/Keys.json"
+			type :PUT
+			parameters:reqbody.toString()
+			headers:headersNew
+		];
+		response.put("text","Please provide your digital ocean token. Example: my token is <Digital Ocean Token>");
+	}
+}
+else if(message.contains("my token is"))
+{
+	digitalOceanToken = message.remove("my token is ");
+	headersNew = Map();
+	headersNew.put("Content-Type","application/json");
+	reqbody = Map();
+	reqbody.put("email",user.get("email"));
+	reqbody.put("Token",digitalOceanToken);
+	reqbody.put("sshKeyId",null);
+	newFirebaseResponse = invokeurl
+	[
+		url :"https://hackduke-d56a4.firebaseio.com/rest/saving-data/fireblog/" + user.get("first_name") + "/Keys.json"
+		type :PUT
+		parameters:reqbody.toString()
+		headers:headersNew
+	];
+	response.put("text","please provide your ssh key id. Example: my ssh key id is <SSH key ID>");
+}
+else if(message.contains("my ssh key id is"))
+{
+	headersTemp = Map();
+	headersTemp.put("Content-Type","application/json");
+	fireBaseResponse = invokeurl
+	[
+		url :"https://hackduke-d56a4.firebaseio.com/rest/saving-data/fireblog/" + user.get("first_name") + "/Keys.json"
+		type :GET
+		headers:headersTemp
+	];
+	digitalOceanToken = fireBaseResponse.toMap().get("Token");
+	sshKeyId = message.remove("my ssh key id is ");
+	headersNew = Map();
+	headersNew.put("Content-Type","application/json");
+	reqbody = Map();
+	reqbody.put("email",user.get("email"));
+	reqbody.put("Token",digitalOceanToken);
+	reqbody.put("sshKeyId",sshKeyId);
+	newFirebaseResponse = invokeurl
+	[
+		url :"https://hackduke-d56a4.firebaseio.com/rest/saving-data/fireblog/" + user.get("first_name") + "/Keys.json"
+		type :PUT
+		parameters:reqbody.toString()
+		headers:headersNew
+	];
+	response.put("text","Keys saved succesfully");
+}
+else if(actionName.equalsIgnoreCase("manage.reservation"))
+{
+	responseToUser = "Here are your active reservations with me: \n";
+	//get data from firebase
+	headersTemp = Map();
+	headersTemp.put("Content-Type","application/json");
+	fireBaseResponse = invokeurl
+	[
+		url :"https://hackduke-d56a4.firebaseio.com/rest/saving-data/fireblog/" + user.get("first_name") + "/Reservations.json"
+		type :GET
+		headers:headersTemp
+	];
+
+       if(fireBaseResponse.equalsIgnoreCase("null")) {
+			response.put("text", "you have no reservations with me yet");
+	   } else {
+	    responseMap = fireBaseResponse.toMap();
+		for each  key in responseMap.keys()
+	{
+		droplet = responseMap.get(key);
+		responseToUser = responseToUser + "Droplet ID: " + droplet.get("dropletId") + "\n";
+	}
+	  response.put("text", responseToUser);
+  }
+
+} else if(actionName.equalsIgnoreCase("terminate.droplet")) {
+	dropletIdProvided = message.remove("delete droplet ");
+    // get token first for user account
+	headersTemp = Map();
+	headersTemp.put("Content-Type","application/json");
+	fireBaseResponse = invokeurl
+	[
+		url :"https://hackduke-d56a4.firebaseio.com/rest/saving-data/fireblog/" + user.get("first_name") + "/Keys.json"
+		type :GET
+		headers:headersTemp
+	];
+	digitalOceanToken = fireBaseResponse.toMap().get("Token");
+	digitalOceanHeader = Map();
+	digitalOceanHeader.put("Content-Type","application/json");
+	digitalOceanHeader.put("Authorization","Bearer " + digitalOceanToken);
+
+	// now call delete action on droplet
+	digitalOceanResponse = invokeurl
+	[
+		url :"https://api.digitalocean.com/v2/droplets/" + dropletIdProvided
+		type :DELETE
+		headers:digitalOceanHeader
+	];
+
+    // now remove entry from firebase too
+	headersFireBase = Map();
+	headersFireBase.put("Content-Type","application/json");
+	fireBaseResponseAfterDelete = invokeurl
+	[
+		url :"https://hackduke-d56a4.firebaseio.com/rest/saving-data/fireblog/" + user.get("first_name") + "/Reservations/" + dropletIdProvided + "Details.json"
+		type :DELETE
+		headers:headersTemp
+	];
+	response.put("text","Droplet deleted succesfully");
+} else if(actionName.equalsIgnoreCase("show.configurations")) {
+		response.put("text", "https://transfer.sh/hMmpP/digitalOceanPricing.PNG");
+}
+else
+{
+	response.put("text","Sorry, I could not recognize the command you have entered. Please type help to see what I               can do for you.");
+}
+// zoho.creator.createRecord("bhavya59", "autobots-database", "Untitled_Form", );
+// suggestions = '[{"text":"one"},{"text":"two"}]';
+// response.put("suggestions",suggestions);
+return response;
